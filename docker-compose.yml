@@ -1,0 +1,16 @@
+services:
+  router-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai_router_service
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist ChromaDB database directory outside container
+      - ./db:/app/db
+      # Mount application code for live updates
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
