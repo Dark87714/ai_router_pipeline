@@ -7,6 +7,7 @@ from src.ast_parser import parse_code_to_logic
 
 client = TestClient(app)
 
+
 def test_health_check():
     """Verify endpoint availability and database status."""
     response = client.get("/health")
@@ -44,7 +45,7 @@ def test_route_text_and_code_modes():
     assert res_text.status_code == 200
     assert res_text.json()["status"] == "MATCHES_FOUND"
 
-    # Code mode query (using exact indexed snippet to pass strict 0.20 threshold)
+    # Code mode query (using exact indexed snippet to pass strict distance threshold)
     exact_code_snippet = """def calculate_ast_depth(node) -> int:
     if not isinstance(node, ast.AST):
         return 0
@@ -144,3 +145,33 @@ def test_compressor_skips_syntax_error_files():
         assert response.status_code == 200
         assert response.json()["metrics"]["scanned_files"] == 1
         assert response.json()["metrics"]["indexed_snippets"] == 0
+
+
+def test_executor_security_blocking():
+    """Verify AST security visitor blocks dangerous imports and system calls."""
+    payload = {
+        "match_payload": {
+            "rule_id": "malicious_rule",
+            "raw_code": "import os\nos.system('echo hacked')",
+            "metrics": {}
+        }
+    }
+    response = client.post("/execute", json=payload)
+    assert response.status_code == 422
+    assert "Forbidden module import 'os' detected." in response.json()["detail"]
+
+
+def test_executor_timeout_enforcement():
+    """Verify execution engine kills long-running or infinite loops."""
+    payload = {
+        "match_payload": {
+            "rule_id": "infinite_loop",
+            "raw_code": "while True:\n    pass",
+            "metrics": {}
+        }
+    }
+    response = client.post("/execute", json=payload)
+    assert response.status_code == 200
+    exec_res = response.json()["execution_result"]
+    assert exec_res["success"] is False
+    assert "TimeoutError" in exec_res["error"]
